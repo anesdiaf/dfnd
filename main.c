@@ -7,7 +7,10 @@
 //////////////////////////////////////////////////////////////
 
 #include "raylib.h"
+#include "raymath.h"
+#include <stdio.h>
 #include <stdbool.h>
+
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -15,14 +18,22 @@
 
 #define SCREEN_WIDTH        400
 #define SCREEN_HEIGHT       800
-#define PLAYER_SPEED        600         // Pixels per second
-#define PROJECTILE_SPEED    500         // Pixels per second (upward)
-#define MAX_ENEMIES         5           // Maximum live enemies at once
-#define ENEMY_SPEED         60          // Pixels per second (downward)
-#define MAX_PROJECTILES     4           // Maximum live projectiles at once
-#define PLAYER_SCALE        1.5f        // Draw scale applied to the player sprite
-#define SHOOT_COOLDOWN      0.2f        // Minimum seconds between shots
-#define GAME_SCALE      1.0f            // Draw scale applied to all sprites
+#define STORAGE_DATA_FILE "data.txt"
+#define PLAYER_SPEED        600             // Pixels per second
+#define PROJECTILE_SPEED    500             // Pixels per second (upward)
+#define MAX_ENEMIES         5               // Maximum live enemies at once
+#define ENEMY_SPEED         60              // Pixels per second (downward)
+#define MAX_PROJECTILES     4               // Maximum live projectiles at once
+#define PLAYER_SCALE        1.5f            // Draw scale applied to the player sprite
+#define SHOOT_COOLDOWN      0.2f            // Minimum seconds between shots
+#define GAME_SCALE      1.0f                // Draw scale applied to all sprites
+
+
+// ---------------------------------------------------------------------------
+// Module Functions Declaration
+// ---------------------------------------------------------------------------
+static void SaveHighScore(int value);
+static int LoadHighScore();
 
 // ---------------------------------------------------------------------------
 // Data structures
@@ -148,6 +159,18 @@ int main(void)
     bool isMenu  = true;
     bool gameOver = false;
     int  score   = 0;
+    int highScore = 0;
+    // Load high score from STORAGE_DATA_FILE
+    highScore = LoadHighScore();
+
+
+
+    // Add these variables (outside the game loop)
+    Vector2 playerVelocity = {0.0f, 0.0f};
+
+    const float PLAYER_ACCELERATION = 200.0f;  // How fast speed builds up
+    const float PLAYER_MAX_SPEED    = 280.0f;  // Top speed
+    const float PLAYER_FRICTION     = 500.0f;  // How fast it slows down (lower = floatier)
 
     // -----------------------------------------------------------------------
     // Main game loop
@@ -223,12 +246,30 @@ int main(void)
         // -------------------------------------------------------------------
         // GAMEPLAY — Input
         // -------------------------------------------------------------------
-        if (IsKeyDown(KEY_LEFT) && playerPosition.x > 0.0f)
-            playerPosition.x -= PLAYER_SPEED * delta;
+        // Replace your movement code with this (inside game loop)
+        bool movingLeft  = IsKeyDown(KEY_LEFT);
+        bool movingRight = IsKeyDown(KEY_RIGHT);
 
-        if (IsKeyDown(KEY_RIGHT) &&
-            playerPosition.x < SCREEN_WIDTH - playerSprite.width * PLAYER_SCALE)
-            playerPosition.x += PLAYER_SPEED * delta;
+        if (movingLeft)
+            playerVelocity.x -= PLAYER_ACCELERATION * delta;
+        else if (movingRight)
+            playerVelocity.x += PLAYER_ACCELERATION * delta;
+        else {
+            // Apply friction when no key is held
+            float friction = PLAYER_FRICTION * delta;
+            if (fabsf(playerVelocity.x) <= friction)
+                playerVelocity.x = 0.0f;
+            else
+                playerVelocity.x -= friction * (playerVelocity.x > 0 ? 1.0f : -1.0f);
+        }
+
+        // Clamp to max speed
+        playerVelocity.x = Clamp(playerVelocity.x, -PLAYER_MAX_SPEED, PLAYER_MAX_SPEED);
+
+        // Apply velocity and clamp to screen bounds
+        playerPosition.x += playerVelocity.x * delta;
+        playerPosition.x = Clamp(playerPosition.x, 0.0f,
+            (float)(SCREEN_WIDTH) - playerSprite.width * PLAYER_SCALE);
 
         // Shoot with cooldown so SPACE held down doesn't spam bullets.
         shootTimer += delta;
@@ -292,12 +333,24 @@ int main(void)
                 if (enemies[i].position.y > SCREEN_HEIGHT)
                 {
                     gameOver = true;
+                    // Save score as high score if bigger then last highscore
+                    if(score > highScore){
+                        highScore = score;
+                        SaveHighScore(highScore);
+                    }
                 }
 
                 // Check direct collision with the player.
                 if (CheckCollisionRecs(enemies[i].collisionBox, playerCollisionRect))
                 {
+                    // Change game state
                     gameOver = true;
+                    // Save score as high score if bigger then last highscore
+                    if(score > highScore){
+                        highScore = score;
+                        SaveHighScore(highScore);
+                    }
+
                 }
             }
         }
@@ -310,6 +363,7 @@ int main(void)
 
         // HUD
         DrawText(TextFormat("Score: %d", score), 10, 10, 20, BLUE);
+        DrawText(TextFormat("High score: %d", highScore), ((SCREEN_WIDTH - 10) - MeasureText(TextFormat("High score: %d", highScore), 20)), 10, 20, BLUE);
 
         // Player
         DrawPlayer(playerSprite, playerPosition, &playerCollisionRect);
@@ -347,4 +401,29 @@ int main(void)
     CloseWindow();
 
     return 0;
+}
+
+// ---------------------------------------------------------------------------
+// Module Functions Declaration
+// ---------------------------------------------------------------------------
+void SaveHighScore(int value){
+    FILE *file = fopen(STORAGE_DATA_FILE, "w");
+
+    if(file != NULL){
+        fprintf(file, "%d", value);
+        fclose(file);
+    }
+}
+
+int LoadHighScore(){
+    int score = 0;
+
+    FILE *file = fopen(STORAGE_DATA_FILE, "r");
+
+    if(file != NULL){
+        fscanf(file, "%d", &score);
+        fclose(file);
+    }
+
+    return score;
 }
